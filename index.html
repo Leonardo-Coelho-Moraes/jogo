@@ -58,29 +58,35 @@
     color: #000;
   }
   #mobile-controls {
-    position: absolute;
-    bottom: 10px;
-    left: 10px;
-    display: flex;
-    gap: 10px;
-    z-index: 5;
-    justify-content: space-between;
-    width:95%;
-  }
-  .mobile-btn {
-    width: 50px;
-    height: 50px;
-    background: rgba(255, 255, 255, 0.1);
-    border: 2px solid #fff;
-    border-radius: 10px;
-    color: #fff;
-    font-size: 24px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    font-family: 'Press Start 2P', cursive;
-    user-select: none;
-  }
+  position: absolute;
+  bottom: 20px;
+  left: 0;
+  width: 100%;
+  padding: 0 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  pointer-events: none; /* permite clique apenas nos botões */
+}
+
+.mobile-btn {
+  pointer-events: auto;
+  width: 80px;
+  height: 80px;
+  background: rgba(255, 255, 255, 0.2);
+  border: 2px solid #fff;
+  border-radius: 16px;
+  color: #fff;
+  font-size: 28px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-family: 'Press Start 2P', cursive;
+  user-select: none;
+  touch-action: none;
+}
+
+  
 </style>
 </head>
 <body>
@@ -93,11 +99,14 @@
   </div>
 </div>
 <div id="mobile-controls">
-  <div style="display: flex; gap:20px;"> <div class="mobile-btn" id="btn-left" style="transform: rotate(270deg);">↑</div>
-    <div class="mobile-btn" id="btn-right" style="transform: rotate(90deg);">↑</div></div>
-   
-    <div class="mobile-btn" id="btn-jump">↑</div>
+  <!-- Botões de direção à esquerda -->
+  <div style="display: flex; gap: 20px;">
+    <div class="mobile-btn" id="btn-left" style="transform: rotate(270deg);" aria-label="Mover para a esquerda">↑</div>
+    <div class="mobile-btn" id="btn-right" style="transform: rotate(90deg);" aria-label="Mover para a direita">↑</div>
   </div>
+
+  <!-- Botão de pulo à direita -->
+  <div class="mobile-btn" id="btn-jump" aria-label="Pular">↑</div>
 </div>
 <script>
 (() => {
@@ -184,13 +193,13 @@ enableBtn(btnJump, 'up');
  
   const GRAVITY = 0.6;
   const PLAYER_SPEED = 4;
-  const JUMP_VELOCITY = -12;
+  const JUMP_VELOCITY = -13;
   const PLATFORM_WIDTH = 170;
   const PLATFORM_HEIGHT = 24;
   const MIN_GAP = 80;
-  const MAX_GAP = 130;
+  const MAX_GAP = 100;
   const MAX_HEIGHT_DIFF = 90;
-  const BULLET_SPEED = 4;
+  const BULLET_SPEED = 3;
   const BULLET_SIZE = 23;
   const PLATFORM_Y_MIN = H * 0.2;
   const PLATFORM_Y_MAX = H * 0.8;
