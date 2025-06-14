@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Infinite Platformer - Mario Style Black & White</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+  * {
+    margin: 0; padding: 0; box-sizing: border-box;
+  }
+  html, body {
+    background-color: #000;
+    color: #fff;
+    font-family: 'Press Start 2P', cursive;
+    overflow: hidden;
+    height: 100vh;
+    user-select: none;
+  }
+  canvas {
+    display: block;
+ 
+  }
+
+ #game-container {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  background: url('fundo.png') no-repeat center center; /* Verifique se o caminho está correto */
+  background-size: cover; /* Isso garante que a imagem cubra todo o contêiner */
+}
+
+
+  #restart-overlay {
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.85);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    font-family: 'Press Start 2P', cursive;
+    font-size: 24px;
+    color: #fff;
+    z-index: 10;
+    visibility: hidden;
+  }
+  #restart-btn {
+    margin-top: 20px;
+    padding: 16px 32px;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    background: none;
+    color: #fff;
+    font-family: 'Press Start 2P', cursive;
+    transition: background-color 0.3s, color 0.3s;
+    user-select: none;
+  }
+  #restart-btn:hover {
+    border: 2px solid #fff;
+    background: #fff;
+    color: #000;
+  }
+  #sound-btn {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    padding: 10px;
+    background: rgba(255, 255, 255, 0.5);
+    border: none;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+<div id="game-container">
+  <canvas id="game"></canvas>
+  <div id="restart-overlay" role="alert" aria-live="assertive">
+    GAME OVER
+    <button id="restart-btn" aria-label="Restart game">RESTART</button>
+    <span id="pontos" style="margin-top: 20px;"></span>
+  </div>
+  <button id="sound-btn">Toggle Sound</button>
+</div>
+
+<audio id="background-music" loop>
+  <source src="background.mp3" type="audio/mpeg">
+</audio>
+
+<div id="mobile-controls">
+  <div class="mobile-group">
+    <div class="mobile-btn" id="btn-left">←</div>
+    <div class="mobile-btn" id="btn-right">→</div>
+  </div>
+  <div class="mobile-group">
+    <div class="mobile-btn" id="btn-jump">↑</div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const overlay = document.getElementById('restart-overlay');
+  const restartBtn = document.getElementById('restart-btn');
+  const pontos = document.getElementById('pontos');
+  const soundBtn = document.getElementById('sound-btn');
+  const backgroundMusic = document.getElementById('background-music');
+
+  const btnLeft = document.getElementById('btn-left');
+  const btnRight = document.getElementById('btn-right');
+  const btnJump = document.getElementById('btn-jump');
+
+  let W, H;
+  function resize() {
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = W;
+    canvas.height = H;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  const keys = { left:false, right:false, up:false };
+  window.addEventListener('keydown', e => {
+    if(e.key === 'ArrowLeft' || e.key === 'a') keys.left = true;
+    if(e.key === 'ArrowRight' || e.key === 'd') keys.right = true;
+    if(e.key === ' ' || e.key === 'ArrowUp' || e.key === 'w') keys.up = true;
+  });
+  window.addEventListener('keyup', e => {
+    if(e.key === 'ArrowLeft' || e.key === 'a') keys.left = false;
+    if(e.key === 'ArrowRight' || e.key === 'd') keys.right = false;
+    if(e.key === ' ' || e.key === 'ArrowUp' || e.key === 'w') keys.up = false;
+  });
+
+  const activeTouches = new Set();
+
+  const setKey = (element, direction) => {
+    element.dataset.direction = direction;
+  };
+
+  setKey(btnLeft, 'left');
+  setKey(btnRight, 'right');
+  setKey(btnJump, 'up');
+
+  function setupTouchControls(button, direction) {
+    let touchId = null;
+
+    button.addEventListener('touchstart', e => {
+      e.preventDefault();
+      const touch = e.changedTouches[0];
+      touchId = touch.identifier;
+      keys[direction] = true;
+    }, { passive: false });
+
+    button.addEventListener('touchend', e => {
+      for (let touch of e.changedTouches) {
+        if (touch.identifier === touchId) {
+          keys[direction] = false;
+          touchId = null;
+        }
+      }
+    });
+
+    button.addEventListener('touchcancel', () => {
+      keys[direction] = false;
+      touchId = null;
+    });
+  }
+
+  setupTouchControls(btnLeft, 'left');
+  setupTouchControls(btnRight, 'right');
+  setupTouchControls(btnJump, 'up');
+
+  const GRAVITY = 0.5;
+  const PLAYER_SPEED = 4;
+  const JUMP_VELOCITY = -12;
+  const PLATFORM_WIDTH = 170;
+  const PLATFORM_HEIGHT = 24;
+  const MIN_GAP = 80;
+  const MAX_GAP = 90;
+  const MAX_HEIGHT_DIFF = 90;
+  const BULLET_SPEED = 3;
+  const BULLET_SIZE = 23;
+  const PLATFORM_Y_MIN = H * 0.2;
+  const PLATFORM_Y_MAX = H * 0.8;
+  const COIN_FRAME_WIDTH = 16;
+  const COIN_FRAME_HEIGHT = 16;
+  const COIN_FRAMES = 4;
+  const COIN_SIZE = 32;
+
+  const COIN_CHANCE = 0.3;
+  let cameraX = 0;
+  let gameOver = false;
+  let startX = 0;
+
+  const bulletImage = new Image();
+  bulletImage.src = 'bala.png';
+
+  const playerImage = new Image();
+  playerImage.src = 'scientist.png';
+
+  const coinImage = new Image();
+  coinImage.src = 'objetos.png';
+
+  const jumpSound = new Audio('jump.mp3');
+  const coinSound = new Audio('coin.mp3');
+  const backgroundImage = new Image();
+  backgroundImage.src = 'fundo.png';
+
+  const platformImage = new Image();
+  platformImage.src = 'plataforma.png';
+
+  class Platform {
+    constructor(x, y, width = 170, height = 20) {
+      this.x = x;
+      this.y = y;
+      this.width = width;
+      this.height = height;
+    }
+
+    draw() {
+      ctx.drawImage(
+        platformImage,
+        this.x - cameraX,
+        this.y,
+        this.width,
+        this.height
+      );
+    }
+  }
+
+  class Bullet {
+    constructor(x, y) {
+      this.x = x;
+      this.y = y;
+      this.width = BULLET_SIZE;
+      this.height = BULLET_SIZE;
+      this.speed = BULLET_SPEED;
+    }
+    update() {
+      this.x -= this.speed;
+    }
+    draw() {
+      ctx.drawImage(bulletImage, this.x - cameraX, this.y, this.width, this.height);
+    }
+  }
+
+  const coins = [];
+  class Coin {
+    constructor(x, y) {
+      this.x = x;
+      this.y = y;
+      this.collected = false;
+      this.frameX = 0;
+      this.frameTimer = 0;
+      this.frameDelay = 12;
+    }
+
+    update() {
+      if (this.collected) return;
+      this.frameTimer++;
+      if (this.frameTimer >= this.frameDelay) {
+        this.frameTimer = 0;
+        this.frameX = (this.frameX + 1) % COIN_FRAMES;
+      }
+    }
+
+    draw() {
+      if (this.collected) return;
+      ctx.drawImage(
+        coinImage,
+        this.frameX * COIN_FRAME_WIDTH, 0,
+        COIN_FRAME_WIDTH, COIN_FRAME_HEIGHT,
+        this.x - cameraX, this.y,
+        COIN_SIZE, COIN_SIZE
+      );
+    }
+  }
+
+  class Player {
+    constructor() {
+      this.width = 32;
+      this.height = 48;
+      this.x = 100;
+      this.y = PLATFORM_Y_MAX - this.height;
+      this.vx = 0;
+      this.vy = 0;
+      this.onPlatform = false;
+      this.coins = 0;
+
+      this.frameX = 1;
+      this.frameY = 0;
+      this.frameWidth = 34;
+      this.frameHeight = 52;
+      this.frameDelay = 6;
+      this.frameTimer = 0;
+    }
+
+    update(platforms, bullets) {
+      if (gameOver) return;
+
+      if (keys.left) {
+        this.vx = -PLAYER_SPEED;
+        this.frameY = 1;
+        this.animateWalk();
+      } else if (keys.right) {
+        this.vx = PLAYER_SPEED;
+        this.frameY = 2;
+        this.animateWalk();
+      } else {
+        this.vx = 0;
+        this.frameX = 0;
+      }
+
+      if (keys.up && this.onPlatform) {
+        this.vy = JUMP_VELOCITY;
+        this.onPlatform = false;
+        jumpSound.play();
+      }
+
+      this.vy += GRAVITY;
+      this.x += this.vx;
+      this.y += this.vy;
+
+      this.checkPlatforms(platforms);
+      this.checkBullets(bullets);
+      this.checkCoins();
+
+      if (this.y > H + 200) triggerGameOver();
+    }
+
+    animateWalk() {
+      this.frameTimer++;
+      if (this.frameTimer >= this.frameDelay) {
+        this.frameTimer = 0;
+        this.frameX++;
+        if (this.frameX > 3) this.frameX = 1;
+      }
+    }
+
+    checkPlatforms(platforms) {
+      this.onPlatform = false;
+      for (let p of platforms) {
+        if (this.x + this.width > p.x && this.x < p.x + p.width) {
+          const playerBottom = this.y + this.height;
+          const platformTop = p.y;
+          const playerPrevBottom = playerBottom - this.vy;
+          if (playerPrevBottom <= platformTop && playerBottom >= platformTop) {
+            if (this.vy >= 0) {
+              this.y = platformTop - this.height;
+              this.vy = 0;
+              this.onPlatform = true;
+            }
+          }
+        }
+      }
+    }
+
+    checkBullets(bullets) {
+      for (let b of bullets) {
+        if (this.x + this.width > b.x && this.x < b.x + b.width &&
+            this.y + this.height > b.y && this.y < b.y + b.height) {
+          // Colisão com a bala
+          triggerGameOver();
+        }
+      }
+    }
+
+    checkCoins() {
+      for (let coin of coins) {
+        if (!coin.collected &&
+            this.x + this.width > coin.x && this.x < coin.x + COIN_SIZE &&
+            this.y + this.height > coin.y && this.y < coin.y + COIN_SIZE) {
+          coin.collected = true;
+          this.coins++;
+          coinSound.play();
+        }
+      }
+    }
+
+    draw() {
+      ctx.drawImage(
+        playerImage,
+        this.frameX * this.frameWidth,
+        this.frameY * this.frameHeight,
+        this.frameWidth, this.frameHeight,
+        this.x - cameraX, this.y,
+        this.width, this.height
+      );
+    }
+  }
+
+  function generateNextPlatform(lastPlatform) {
+    let gap = Math.random() * (MAX_GAP - MIN_GAP) + MIN_GAP;
+    let nextX = lastPlatform.x + lastPlatform.width + gap;
+    let maxY = Math.min(PLATFORM_Y_MAX, lastPlatform.y + MAX_HEIGHT_DIFF);
+    let minY = Math.max(PLATFORM_Y_MIN, lastPlatform.y - MAX_HEIGHT_DIFF);
+    let nextY = Math.random() * (maxY - minY) + minY;
+    const platform = new Platform(nextX, nextY);
+
+    if (Math.random() < COIN_CHANCE) {
+      coins.push(new Coin(
+        nextX + PLATFORM_WIDTH / 2 - COIN_SIZE / 2,
+        nextY - COIN_SIZE - 5
+      ));
+    }
+
+    return platform;
+  }
+
+  const platforms = [];
+  const bullets = [];
+  const player = new Player();
+
+  function startGame() {
+    cameraX = 0;
+    gameOver = false;
+    platforms.length = 0;
+    bullets.length = 0;
+    coins.length = 0;
+    player.x = 100;
+    player.y = PLATFORM_Y_MAX - player.height;
+    player.vx = 0;
+    player.vy = 0;
+    player.onPlatform = false;
+    player.coins = 0;
+    platforms.push(new Platform(50, PLATFORM_Y_MAX));
+    platforms.push(generateNextPlatform(platforms[0]));
+    startX = player.x;
+    overlay.style.visibility = 'hidden';
+    backgroundMusic.play();
+    requestAnimationFrame(loop);
+  }
+
+  restartBtn.addEventListener('click', () => startGame());
+
+  function triggerGameOver() {
+    gameOver = true;
+    backgroundMusic.pause();
+    const distance = Math.max(0, Math.floor(player.x - startX));
+    overlay.style.visibility = 'visible';
+    pontos.textContent = `DISTANCIA: ${distance} \nMOEDAS: ${player.coins}`;
+  }
+
+  soundBtn.addEventListener('click', () => {
+    if (backgroundMusic.paused) {
+      backgroundMusic.play();
+      soundBtn.textContent = "Mutar";
+    } else {
+      backgroundMusic.pause();
+      soundBtn.textContent = "Desmutar";
+    }
+  });
+
+  platforms.push(new Platform(50, PLATFORM_Y_MAX));
+  platforms.push(generateNextPlatform(platforms[0]));
+  startX = player.x;
+
+  let bulletTimer = 0;
+  const BULLET_SPAWN_INTERVAL = 1500;
+
+  let lastTime = 0;
+  function loop(timestamp) {
+    if (!lastTime) lastTime = timestamp;
+    const delta = timestamp - lastTime;
+    lastTime = timestamp;
+    const parallaxX = -cameraX * 0.5; // Ajuste a velocidade do fundo
+    ctx.drawImage(backgroundImage, parallaxX, 0, W + 200, H);
+    ctx.clearRect(0, 0, W, H);
+
+    if (!gameOver) {
+      player.update(platforms, bullets);
+
+      let targetCameraX = player.x - 100;
+      if (targetCameraX > cameraX) cameraX = targetCameraX;
+
+      while (platforms.length && platforms[0].x + platforms[0].width < cameraX - 50) platforms.shift();
+      while (platforms.length && platforms[platforms.length - 1].x < cameraX + W) {
+        platforms.push(generateNextPlatform(platforms[platforms.length - 1]));
+      }
+
+      bulletTimer += delta;
+      if (bulletTimer > BULLET_SPAWN_INTERVAL) {
+        bulletTimer = 0;
+        const bY = Math.random() * (PLATFORM_Y_MAX - PLATFORM_Y_MIN) + PLATFORM_Y_MIN - BULLET_SIZE / 2;
+        bullets.push(new Bullet(cameraX + W + 50, bY));
+      }
+      for (let i = bullets.length - 1; i >= 0; i--) {
+        bullets[i].update();
+        if (bullets[i].x + bullets[i].width < cameraX - 50) bullets.splice(i, 1);
+      }
+    }
+
+    for (let p of platforms) p.draw();
+    for (let coin of coins) {
+      coin.update();
+      coin.draw();
+    }
+
+    for (let b of bullets) b.draw();
+    player.draw();
+
+    const distance = Math.max(0, Math.floor(player.x - startX));
+    ctx.fillStyle = '#000';
+    ctx.font = '14px monospace';
+    ctx.fillText('PONTOS: ' + distance, 20, 40);
+    ctx.fillText('MOEDAS: ' + player.coins, 20, 60);
+    ctx.font = '12px monospace';
+    ctx.fillText('Use ← → para mover, ↑ ou SPACE para pular', 20, 80);
+
+    if (!gameOver) requestAnimationFrame(loop);
+  }
+
+  startGame();
+})();
+</script>
+</body>
+</html>
